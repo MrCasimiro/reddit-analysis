@@ -34,7 +34,9 @@ def create_tables(conn):
                     GILDED          BIGINT,
                     SCORE           BIGINT,
                     SUBREDDIT_ID    BIGINT          REFERENCES SUBREDDIT(ID),
-                    CREATED_UTC     TIMESTAMP WITHOUT TIME ZONE    NOT NULL);""")
+                    CREATED_UTC     TIMESTAMP WITHOUT TIME ZONE    NOT NULL,
+                    LINK_ID         BIGINT          NOT NULL,
+                    PARENT_ID       BIGINT          NOT NULL);""")
     cur.close()
     conn.commit()
 
@@ -42,43 +44,51 @@ def create_tables(conn):
 def populate(conn, filename):
     with open(filename, 'r') as data:
         line = data.readline()
+        deleted = 0
+        valid = 0
         while line:
             cur = conn.cursor()
             try:
                 comment_block = json.loads(line)
 
-                # adjusting column variables to populate
-                created_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(
-                                     int(comment_block['created_utc'])))
-                subreddit_id = int(comment_block['subreddit_id'].split('_')[1],
-                                   36)
-                score = int(comment_block['score'])
-                gilded = int(comment_block['gilded'])
+                if comment_block['body'] == '[deleted]':
+                    deleted += 1
+                else:
+                    valid += 1
+                    # adjusting column variables to populate
+                    created_time = time.strftime("%Y-%m-%d %H:%M:%S",
+                                                 time.gmtime(int(comment_block['created_utc'])))
+                    subreddit_id = int(comment_block['subreddit_id'].split('_')[1],
+                                       36)
+                    score = int(comment_block['score'])
+                    gilded = int(comment_block['gilded'])
 
-                if not subreddit_id_exists(subreddit_id, conn):
-                    cur.execute("""INSERT INTO subreddit (id, name) VALUES
-                                (%s, %s)""", (subreddit_id,
-                                              comment_block['subreddit'],))
+                    if not subreddit_id_exists(subreddit_id, conn):
+                        cur.execute("""INSERT INTO subreddit (id, name) VALUES
+                                    (%s, %s)""", (subreddit_id,
+                                                  comment_block['subreddit'],))
 
-                cur.execute("""INSERT INTO comment VALUES
-                            (%s,%s,%s,%s,%s,%s,%s)""",
-                            (int(comment_block['id'], 36),
-                             comment_block['author'], comment_block['body'],
-                             gilded, score, subreddit_id, created_time,))
+                    cur.execute("""INSERT INTO comment VALUES
+                                (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                (int(comment_block['id'], 36),
+                                 comment_block['author'], comment_block['body'],
+                                 gilded, score, subreddit_id, created_time,
+                                 int(comment_block['link_id'].split('_')[1],
+                                     36),
+                                 int(comment_block['parent_id'].split('_')[1],
+                                     36),))
             except Exception as ex:
                 print(ex)
                 conn.rollback()
                 return
             conn.commit()
             line = data.readline()
+        with open('valid_comments', 'w') as valid_file:
+            comment = """
+                         Comentários válidos:   %d
+                         Comentários inválidos: %d
+                         Total:                 %d""" % (valid, deleted,
+                                                         valid+deleted)
+            valid_file.write(comment)
 
 
-conn = connect('reddit', 'casimiro', 'danizinha15')
-# create_tables(conn)
-
-initial_time = time.time()
-populate(conn, 'data')
-time_file = open('populate_time.txt', 'w')
-total_time = ''.join([str(time.time() - initial_time), 'seconds'])
-time_file.write(total_time)
-conn.close()

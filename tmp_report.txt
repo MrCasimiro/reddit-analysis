@@ -1,0 +1,26 @@
+Relatório de atividades realizadas no experimento do reddit.
+Aluno: Guilherme Ramos Casimiro
+Orientador: Luciano Antonio Digiampietri
+
+Atividades:
+	- Extração do banco de dados deixado em formato de torrent: https://www.reddit.com/r/datasets/comments/3bxlg7/i_have_every_publicly_available_reddit_comment/
+	- Criação de script para popular o banco de dados. 
+		- Foi utilizado a linguagem de programação Python.
+		- O banco de dados utilizado foi o Potgresql, através do módulo psycopg2.
+		- Alguns ítens do JSON foram considerados, enquanto outros foram descartados
+			(por enquanto):
+				Considerados:
+					- author, body, gilded, link_id, parent_id, score, subreddit_id,
+						created_utc, subreddit, id.
+				Desconsiderados:
+					- author_flair_css_class, author_flair_text, edited, score_hidden,
+						distinguished, controversiality, name, downs, archived,
+						retrieved_on, ups.
+		- Limpar os dados antes da inserção no banco de dados:
+			- Alguns comentários estão como '[deleted]', por alguns motivos, tais
+				como: foram removidos, são privados ou não estavam disponíveis na API.
+		- Ranking de comentários segundo o score.
+			- O ranking é salvo em um .csv, com as colunas Score, Comment, Subreddit,
+				significando, respectivamente, o número de 'curtidas' - 'descurtidas', o
+				comentário em si e o nome do subreddit em que o comentário foi posto.
+
