@@ -11,11 +11,10 @@ Atividades:
 			(por enquanto):
 				Considerados:
 					- author, body, gilded, link_id, parent_id, score, subreddit_id,
-						created_utc, subreddit, id.
+						created_utc, subreddit, id, ups, downs, retrieved_on.
 				Desconsiderados:
 					- author_flair_css_class, author_flair_text, edited, score_hidden,
-						distinguished, controversiality, name, downs, archived,
-						retrieved_on, ups.
+						distinguished, controversiality, name, archived.
 		- Limpar os dados antes da inserção no banco de dados:
 			- Alguns comentários estão como '[deleted]', por alguns motivos, tais
 				como: foram removidos, são privados ou não estavam disponíveis na API.
@@ -23,4 +22,8 @@ Atividades:
 			- O ranking é salvo em um .csv, com as colunas Score, Comment, Subreddit,
 				significando, respectivamente, o número de 'curtidas' - 'descurtidas', o
 				comentário em si e o nome do subreddit em que o comentário foi posto.
+		- Uma medida de tempo para cada arquivo de povoamento está sendo guardado nas pasta populate time.
+		- Uma medida de comentários válidos, inválidos e o total está sendo armazenados na pasta valid comments
+		- Alguns JSON vêm quebrados (quanto maior o arquivo de povoamento, maior a suscetibilidade), tais erros estão sendo armazenados na pasta Populate error.
+		
 

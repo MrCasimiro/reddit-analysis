@@ -58,13 +58,15 @@ def subreddit_overall(conn):
                              'Comments per posts': int(row[1])/int(row[2])})
 
 
-def get_time(filename, method, conn):
+def get_time(filename, method, *args):
     with open((filename + '_time'), 'w') as time_file:
         initial_time = time.time()
-        method(conn)
+        method(*args)
         total_time = ''.join([str(time.time() - initial_time), ' seconds'])
         time_file.write(total_time)
 
 
-conn = connect.connect('reddit_test', 'casimiro', 'danizinha15')
-get_time('comment_ranking', comment_ranking, conn)
+conn = connect.connect('reddit', 'postgres', 'postgres')
+
+#connect.create_tables(conn)
+get_time('populate', connect.populate, conn, 'data')

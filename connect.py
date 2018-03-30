@@ -17,9 +17,12 @@ def subreddit_id_exists(id, conn):
     cur = conn.cursor()
     cur.execute("SELECT * FROM subreddit where id=%d;" % (id,))
     if cur.fetchall():
-        print("Subreddit de id %d já inserido" % id)
         return True
     return False
+
+
+def retrieve_time(utc_time):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(int(utc_time)))
 
 
 def create_tables(conn):
@@ -33,8 +36,11 @@ def create_tables(conn):
                     BODY            TEXT            NOT NULL,
                     GILDED          BIGINT,
                     SCORE           BIGINT,
+                    UPS             BIGINT,
+                    DOWNS           BIGINT,
                     SUBREDDIT_ID    BIGINT          REFERENCES SUBREDDIT(ID),
                     CREATED_UTC     TIMESTAMP WITHOUT TIME ZONE    NOT NULL,
+                    RETRIEVED_ON    TIMESTAMP WITHOUT TIME ZONE    NOT NULL,
                     LINK_ID         BIGINT          NOT NULL,
                     PARENT_ID       BIGINT          NOT NULL);""")
     cur.close()
@@ -56,11 +62,13 @@ def populate(conn, filename):
                 else:
                     valid += 1
                     # adjusting column variables to populate
-                    created_time = time.strftime("%Y-%m-%d %H:%M:%S",
-                                                 time.gmtime(int(comment_block['created_utc'])))
+                    created_time = retrieve_time(comment_block['created_utc'])
+                    retrieved_on = retrieve_time(comment_block['retrieved_on'])
                     subreddit_id = int(comment_block['subreddit_id'].split('_')[1],
                                        36)
                     score = int(comment_block['score'])
+                    ups = int(comment_block['ups'])
+                    downs = int(comment_block['downs'])
                     gilded = int(comment_block['gilded'])
 
                     if not subreddit_id_exists(subreddit_id, conn):
@@ -69,19 +77,22 @@ def populate(conn, filename):
                                                   comment_block['subreddit'],))
 
                     cur.execute("""INSERT INTO comment VALUES
-                                (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                (%s,%s,%s,%s,%s,%s,%s,%s,%s, %s, %s, %s)""",
                                 (int(comment_block['id'], 36),
                                  comment_block['author'], comment_block['body'],
-                                 gilded, score, subreddit_id, created_time,
+                                 gilded, score, ups, downs, subreddit_id,
+                                 created_time, retrieved_on,
                                  int(comment_block['link_id'].split('_')[1],
                                      36),
                                  int(comment_block['parent_id'].split('_')[1],
                                      36),))
+                    conn.commit()
             except Exception as ex:
-                print(ex)
+                with open('populate_error', 'a') as error:
+                    error.write(str(ex))
+                    error.write(str(comment_block))
+                    error.write("\n\n\n")
                 conn.rollback()
-                return
-            conn.commit()
             line = data.readline()
         with open('valid_comments', 'w') as valid_file:
             comment = """
@@ -90,5 +101,3 @@ def populate(conn, filename):
                          Total:                 %d""" % (valid, deleted,
                                                          valid+deleted)
             valid_file.write(comment)
-
-
