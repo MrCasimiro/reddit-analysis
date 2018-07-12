@@ -1,8 +1,15 @@
 import psycopg2
+import psycopg2.extras
 import json
 import time
+import sys
+import codecs
 
 
+MEMORY_SIZE = 10000000 #in bytes
+
+
+# It creates a connection with the db
 def connect(dbname, user, password):
     conn = None
     try:
@@ -12,6 +19,7 @@ def connect(dbname, user, password):
     return conn
 
 
+# It verifies if a subreddit already exists in database
 def subreddit_id_exists(id, conn):
     # Verify if a subreddit was already insert
     cur = conn.cursor()
@@ -21,10 +29,12 @@ def subreddit_id_exists(id, conn):
     return False
 
 
+# It retrieves the full time in gm
 def retrieve_time(utc_time):
     return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(int(utc_time)))
 
 
+# It creates tables for the database
 def create_tables(conn):
     cur = conn.cursor()
     cur.execute(""" CREATE TABLE subreddit (
@@ -47,13 +57,44 @@ def create_tables(conn):
     conn.commit()
 
 
-def populate(conn, filename):
-    with open(filename, 'r') as data:
+    # It customize the insert query
+def create_insert(*args):
+    values = list()
+    for column in args:
+        values.append(column) 
+    return values
+
+
+# write errors in a file
+def write_error(filename, *args):
+    with open(''.join(['populate_error_', filename]), 'a') as error_file:
+        for error in args: error_file.write(str(error) + "\n")
+
+
+# It insert a block of queries
+def insert_block(conn, cur, query):
+    try:
+        sql = "INSERT INTO comment VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, %s, %s, %s) "
+        psycopg2.extras.execute_batch(cur, sql, query, page_size=1000)
+        conn.commit()
+        query = None
+        query = []
+    except Exception as ex:
+        write_error('ERRRO BD', ex, "\n\n\n")
+        conn.rollback()
+    return query
+
+
+# Populate db
+def populate(name, conn, filename):
+    with open(filename, "r") as data:
         line = data.readline()
         deleted = 0
         valid = 0
+        query = []
+        cur = conn.cursor()
+        buffer_out_of_bounds = 0
         while line:
-            cur = conn.cursor()
             try:
                 comment_block = json.loads(line)
 
@@ -70,31 +111,35 @@ def populate(conn, filename):
                     ups = int(comment_block['ups'])
                     downs = int(comment_block['downs'])
                     gilded = int(comment_block['gilded'])
+                    user_id = int(comment_block['id'], 36)
+                    user = str(comment_block['author'])
+                    msg = str(comment_block['body'])
+                    link_id = int(comment_block['link_id'].split('_')[1],
+                                     36)
+                    parent_id = int(comment_block['parent_id'].split('_')[1],
+                                     36)
 
                     if not subreddit_id_exists(subreddit_id, conn):
                         cur.execute("""INSERT INTO subreddit (id, name) VALUES
                                     (%s, %s)""", (subreddit_id,
                                                   comment_block['subreddit'],))
 
-                    cur.execute("""INSERT INTO comment VALUES
-                                (%s,%s,%s,%s,%s,%s,%s,%s,%s, %s, %s, %s)""",
-                                (int(comment_block['id'], 36),
-                                 comment_block['author'], comment_block['body'],
-                                 gilded, score, ups, downs, subreddit_id,
-                                 created_time, retrieved_on,
-                                 int(comment_block['link_id'].split('_')[1],
-                                     36),
-                                 int(comment_block['parent_id'].split('_')[1],
-                                     36),))
-                    conn.commit()
+                    query.append(create_insert(user_id, user, msg, gilded, score,
+                                               ups, downs, subreddit_id, created_time,
+                                               retrieved_on, link_id, parent_id))
+                    if sys.getsizeof(query) >= MEMORY_SIZE:
+                        buffer_out_of_bounds += 1
+                        print("Estouro de buffer nº" + str(buffer_out_of_bounds) + "\n\n\n\n")
+                        query = insert_block(conn, cur, query)
+
             except Exception as ex:
-                with open('populate_error', 'a') as error:
-                    error.write(str(ex))
-                    error.write(str(comment_block))
-                    error.write("\n\n\n")
-                conn.rollback()
+                print('Erro JSON')
+                print(comment_block)
+                write_error(name, 'ERRO JSON', ex, comment_block, "\n\n\n")
             line = data.readline()
-        with open('valid_comments', 'w') as valid_file:
+        insert_block(conn, cur, query)
+                             
+        with open(''.join(['valid_comments_', name]), 'a') as valid_file:
             comment = """
                          Comentários válidos:   %d
                          Comentários inválidos: %d

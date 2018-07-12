@@ -18,12 +18,19 @@ Atividades:
 		- Limpar os dados antes da inserção no banco de dados:
 			- Alguns comentários estão como '[deleted]', por alguns motivos, tais
 				como: foram removidos, são privados ou não estavam disponíveis na API.
-		- Ranking de comentários segundo o score.
-			- O ranking é salvo em um .csv, com as colunas Score, Comment, Subreddit,
-				significando, respectivamente, o número de 'curtidas' - 'descurtidas', o
-				comentário em si e o nome do subreddit em que o comentário foi posto.
-		- Uma medida de tempo para cada arquivo de povoamento está sendo guardado nas pasta populate time.
+		- Uma medida de tempo para cada arquivo de povoamento está sendo guardado na pasta populate time.
 		- Uma medida de comentários válidos, inválidos e o total está sendo armazenados na pasta valid comments
 		- Alguns JSON vêm quebrados (quanto maior o arquivo de povoamento, maior a suscetibilidade), tais erros estão sendo armazenados na pasta Populate error.
-		
+		- Feitas (rotinas):
+			- Ranking de comentários segundo o score.
+				- O ranking é salvo em um .csv, com as colunas Score, Comment, Subreddit,
+					significando, respectivamente, o número de 'curtidas' - 'descurtidas', o
+					comentário em si e o nome do subreddit em que o comentário foi posto.
+			- Tamanho dos comentários x Frequência
+			- Geral de um subreddit (número de comentários, número de posts, número de comentários por posts e nome do subreddit)
+			- Participação dos usuários ao longo do tempo (pelo dia da semana, mes e ano)
+			- Frequência dos comentários ao longo do tempo (segundos, minutos, hora, dia da semana, mês e ano)
+		- Não-feitas:
+			- Achar sazonalidade dos comentários
+			- Achar tamanho médio dos comentários (ou achar uma distribuição dos comentários)
 

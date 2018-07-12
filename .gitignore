@@ -1,0 +1,6 @@
+.RData
+.Rhistory
+.env/*
+__pycache__/*
+*.csv
+*_time
