@@ -30,6 +30,7 @@ Atividades:
 			- Geral de um subreddit (número de comentários, número de posts, número de comentários por posts e nome do subreddit)
 			- Participação dos usuários ao longo do tempo (pelo dia da semana, mes e ano)
 			- Frequência dos comentários ao longo do tempo (segundos, minutos, hora, dia da semana, mês e ano)
+			- Análise sentimental dos comentários do subreddit em positivo, negativo, neutro e composto
 		- Não-feitas:
 			- Achar sazonalidade dos comentários
 			- Achar tamanho médio dos comentários (ou achar uma distribuição dos comentários)
