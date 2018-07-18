@@ -37,7 +37,7 @@ def comm_sent_analyzer(sub_comments):
         sub_eval[sub[1]]['neu'] /= len(sub_sentences)
         sub_eval[sub[1]]['compound'] /= len(sub_sentences)
         print('Write ' + sub[1])
-        with open('subreddit_sentiment.csv', 'w+', newline='') as csvfile:
+        with open('subreddit_sentiment.csv', 'a', newline='') as csvfile:
             field_names = ['Name', 'Positive', 'Negative', 'Neutral', 'Compound']
             writer = csv.DictWriter(csvfile, fieldnames=field_names)
             writer.writeheader()
@@ -45,12 +45,12 @@ def comm_sent_analyzer(sub_comments):
                              'Positive': sub_eval[sub[1]]['pos'],
                              'Negative': sub_eval[sub[1]]['neg'],
                              'Neutral': sub_eval[sub[1]]['neg'],
-                             'Coumpond': sub_eval[sub[1]]['coumpond']})
+                             'Compound': sub_eval[sub[1]]['compound']})
 
     return sub_eval
 
 
-CONN = connect.connect('reddit_test', 'guilhermecasimiro', 'grc_2018')
+CONN = connect.connect('reddit_test', 'postgres', 'postgres')
 CUR = CONN.cursor()
-CUR.execute("SELECT * from subreddit limit 1")
+CUR.execute("SELECT * FROM subreddit WHERE name = 'science' OR name = 'religion'")
 result = comm_sent_analyzer(CUR.fetchall())
