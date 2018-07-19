@@ -83,7 +83,7 @@ def comm_sent_analyzer(sub_comments):
     return sub_eval
 
 
-CONN = connect.connect('reddit_test', 'guilhermecasimiro', 'grc_2018')
+CONN = connect.connect('reddit_test', 'postgres', 'postgres')
 CUR = CONN.cursor()
 CUR.execute("SELECT * from subreddit WHERE name = 'religion' OR name = 'science'")
 result = comm_sent_analyzer(CUR.fetchall())
