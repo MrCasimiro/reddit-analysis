@@ -85,6 +85,12 @@ def insert_block(conn, cur, query):
     return query
 
 
+def is_comm_invalid(comm):
+    if comm == '[deleted]' || comm == 'removed' || comm == 'deleted' || comm.strip() == '':
+        return True
+    return False
+
+
 # Populate db
 def populate(name, conn, filename):
     with open(filename, "r") as data:
@@ -98,7 +104,7 @@ def populate(name, conn, filename):
             try:
                 comment_block = json.loads(line)
 
-                if comment_block['body'] == '[deleted]':
+                if is_comm_invalid(comment_block['body']):
                     deleted += 1
                 else:
                     valid += 1
