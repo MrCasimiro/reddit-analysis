@@ -5,6 +5,7 @@ import sklearn
 from nltk import word_tokenize
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import GaussianNB
+from sklearn.model_selection import cross_val_score
 
 
 # read and return features and labels
@@ -41,8 +42,8 @@ def gaussian_nb(path, set_analyzer, ngram_range):
     counts = ngram_vectorizer.fit_transform(comments)
     data = counts.toarray()
     gnb = GaussianNB()
-    y_pred = gnb.fit(data, authors).predict(data)
-    print("Number of mislabeled points out of a total %d points : %d" % (data.shape[0],(authors != y_pred).sum()))
+    scores = cross_val_score(gnb, data, authors, cv = 5)
+    print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
 
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
             'char_wb', (1, 1))
@@ -51,6 +52,14 @@ gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_au
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
             'char_wb', (3, 3))
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
-            'char_wb', (4, 4))
+            'char', (1, 1))
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
-            'char_wb', (5, 5))
+            'char', (2, 2))
+gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char', (3, 3))
+gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'word', (1, 1))
+gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'word', (2, 2))
+gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'word', (3, 3))
