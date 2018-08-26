@@ -5,6 +5,7 @@ import sklearn
 from nltk import word_tokenize
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import GaussianNB
+from sklearn import svm
 from sklearn.model_selection import cross_val_score
 
 
@@ -45,6 +46,16 @@ def gaussian_nb(path, set_analyzer, ngram_range):
     scores = cross_val_score(gnb, data, authors, cv = 5)
     print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
 
+
+def svm(path, set_analyzer, ngram_range):
+    authors, comments = get_authors_comments(path)
+    ngram_vectorizer = CountVectorizer(analyzer=set_analyzer, ngram_range=ngram_range)
+    counts = ngram_vectorizer.fit_transform(comments)
+    data = counts.toarray()
+    clf = svm.SVC()
+    scores = cross_val_score(clf, data, authors, cv = 5)
+    print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
+
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
             'char_wb', (1, 1))
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
@@ -62,4 +73,23 @@ gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_au
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
             'word', (2, 2))
 gaussian_nb('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'word', (3, 3))
+
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char_wb', (1, 1))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char_wb', (2, 2))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char_wb', (3, 3))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char', (1, 1))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char', (2, 2))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'char', (3, 3))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'word', (1, 1))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
+            'word', (2, 2))
+svm('/home/guilhermecasimiro/SI-Folder/reddit-experiment/AA Dataset/2_authors_sub_1058648_comm.csv',
             'word', (3, 3))
