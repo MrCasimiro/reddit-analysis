@@ -86,7 +86,13 @@ def insert_block(conn, cur, query):
 
 
 def is_comm_invalid(comm):
-    if comm == '[deleted]' || comm == 'removed' || comm == 'deleted' || comm.strip() == '':
+    if comm == '[deleted]' or comm == 'removed' or comm == 'deleted' or comm.strip() == '':
+        return True
+    return False
+
+
+def is_author_not_pres(author):
+    if author == '[deleted]':
         return True
     return False
 
@@ -104,7 +110,7 @@ def populate(name, conn, filename):
             try:
                 comment_block = json.loads(line)
 
-                if is_comm_invalid(comment_block['body']):
+                if is_comm_invalid(comment_block['body']) or is_author_not_pres(comment_block['author']):
                     deleted += 1
                 else:
                     valid += 1

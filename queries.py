@@ -100,6 +100,43 @@ def users_activities(conn):
             writer.writerow({'Author': row[0], 'Day of Week': row[1], 'Month': row[2], 'Year': row[3]})    
 
 
+# Group authors by messages in a specific subreddit id
+def group_authors(conn, sub_id):
+    query = """
+            SELECT author, count(*)
+            FROM comment
+            WHERE subreddit_id = %d
+            GROUP BY author
+            ORDER BY count(*) DESC;""" %(sub_id)
+    with open('authors_sub_' + str(sub_id) + '.csv', 'w', newline='') as csvfile:
+        field_names = ['Author', 'Number of comments']
+        writer = csv.DictWriter(csvfile, fieldnames=field_names)
+        writer.writeheader()
+        for row in get_result(conn, query, 'authors_group_by_sub'):
+            writer.writerow({'Author': row[0], 'Number of comments': row[1]})
+
+
+def find_authors_post(conn, sub_id, num):
+    authors = []
+    with open('authors_sub_' + str(sub_id) + '.csv', 'r') as csvfile:
+        csvfile.readline() # skips header
+        while(num > 0 or num < 0):
+            num -= 1
+            line = csvfile.readline()
+            if(line == ''): break
+            authors.append(line.split(',')[0])
+    query = """
+            SELECT author, body
+            FROM comment
+            WHERE subreddit_id = %d AND author in %s;""" % (sub_id, tuple(authors))
+    with open('_authors_sub_' + str(sub_id) + '_comm.csv', 'w', newline='') as csvfile:
+        field_names = ['Author', 'Comment']
+        writer = csv.DictWriter(csvfile, fieldnames=field_names)
+        writer.writeheader()
+        for row in get_result(conn, query, 'authors_group_by_sub_comm'):
+            writer.writerow({'Author': row[0], 'Comment': row[1]})
+
+
 def get_time(filename, method, *args):
     with open((filename + '_time'), 'w') as time_file:
         initial_time = time.time()
@@ -108,13 +145,15 @@ def get_time(filename, method, *args):
         time_file.write(total_time)
 
 
-conn = connect.connect('reddit', 'postgres', 'postgres')
+conn = connect.connect('reddit_test', 'postgres', 'postgres')
 
 #connect.create_tables(conn)
 #get_time('populate', connect.populate, conn, 'data')
 
-get_time('comments_length', comments_length, conn)
-get_time('comment_ranking', comment_ranking, conn)
-get_time('subreddit_overall', subreddit_overall, conn)
-get_time('comments_over_time', comments_over_time, conn)
-get_time('users_activities', users_activities, conn)
+# get_time('comments_length', comments_length, conn)
+# get_time('comment_ranking', comment_ranking, conn)
+# get_time('subreddit_overall', subreddit_overall, conn)
+# get_time('comments_over_time', comments_over_time, conn)
+# get_time('users_activities', users_activities, conn)
+# get_time('group_authors', group_authors, conn, 1058648)
+get_time('find_authors_post', find_authors_post, conn, 1058648, -1)
