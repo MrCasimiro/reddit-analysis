@@ -5,4 +5,5 @@ __pycache__/*
 *_time
 articles/*
 'AA Dataset'/*
+Results/*
 *.xz
