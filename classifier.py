@@ -5,9 +5,8 @@ import numpy as np
 import pandas as pd
 import sklearn
 import itertools
-import time
 import matplotlib.pyplot as plt
-from nltk import word_tokenize
+from nltk import word_tokenize, pos_tag
 from collections import OrderedDict
 from sklearn.model_selection import KFold
 from sklearn.feature_extraction.text import CountVectorizer
@@ -20,42 +19,55 @@ from sklearn.model_selection import cross_val_score
 from sklearn.linear_model import SGDClassifier
 from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn.linear_model import Perceptron
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.naive_bayes import MultinomialNB
+from scipy.sparse import *
+from scipy import *
 
 
-def get_file_len(path):
+# Get the csv row length
+def get_file_len(PATH):
     csv_len = 0
-    for chunk in pd.read_csv(path, chunksize = 1000):
+    for chunk in pd.read_csv(PATH, chunksize = 1000):
         csv_len += len(chunk)
     return csv_len
 
 
-def get_chunk_iter(path, chunksize):
-    return pd.read_csv(path, sep = ',', iterator = True, chunksize = chunksize)
+# Returns chunk iterator over csv
+def get_chunk_iter(PATH, chunksize):
+    return pd.read_csv(PATH, sep = ',', iterator = True, chunksize = chunksize)
 
 
-# read and return features and labels
+# read and return features (comments) and labels (authors)
 def get_authors_comments(model_table):
     authors = model_table['Author']
     comments = model_table['Comment']
     return authors, comments
 
 
+# Maps Author to an integer starts with 0
+def adjust_authors_dict(PATH):
+    for chunk in pd.read_csv(PATH, chunksize = 1000):
+        authors = chunk['Author'].unique()
+        for author in authors:
+            if not LABELS_DICT.__contains__(author):
+                # add the new author to authors label dictionary
+                if LABELS_DICT.__len__() == 0:
+                    LABELS_DICT[author] = 0
+                else:
+                    LABELS_DICT[author] = list(LABELS_DICT.values())[-1] + 1
+
+
+# Returns a new array mapping the authors name to an integer
 def adjust_labels(authors):
     labels = authors.unique()
-    for author in labels:
-        if not labels_dict.__contains__(author):
-            # add the new author to authors label dictionary
-            if labels_dict.__len__() == 0:
-                labels_dict[author] = 0
-            else:
-                labels_dict[author] = list(labels_dict.values())[-1] + 1
-
-    new_authors = [labels_dict[author] for author in authors]
-    return labels_dict, np.array(new_authors) 
+    new_authors = [LABELS_DICT[author] for author in authors]
+    return np.array(new_authors) 
 
 
-def plot_confusion_matrix(cm, classes, name, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
+# It plots the confusion matrix
+def plot_confusion_matrix(cm, classes, name, normalize=False, title='Confusion matrix'):
+    cmap=plt.cm.Blues
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
         print("Normalized confusion matrix")
@@ -77,73 +89,89 @@ def plot_confusion_matrix(cm, classes, name, normalize=False, title='Confusion m
     plt.tight_layout()
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-    plt.savefig('Results/Confusion Matrix/' + name + '.png')
+    plt.savefig('' + name + '.png')
     plt.close()
 
-    
-### Classifiers setup
 
-# list of classifiers it implements partial fit for online learning
-partial_fit_classifiers = {
-    'SGD': SGDClassifier(),
-    'Perceptron': Perceptron(),
-    # 'NB Multinomial': MultinomialNB(alpha=0.01),
-    'Passive-Aggressive': PassiveAggressiveClassifier(),
-}
-
-classifiers_conf_matrix = {
-    'SGD': np.array(([0, 0], [0, 0])),
-    'Perceptron': np.array(([0, 0], [0, 0])),
-    # 'NB Multinomial': np.array(([0, 0], [0, 0])),
-    'Passive-Aggressive': np.array(([0, 0], [0, 0])),
-}
-
-types_analyser = ['char_wb', 'char', 'word']
-types_ngram = [(1, 1), (2, 2), (3, 3)]
-kf_number = 5
-
-all_classes = np.array([0, 1])
-path = 'AA Dataset/2_authors_sub_1058648_comm.csv'
-chunksize = 2000
-chunk_num_iterations = np.ceil(get_file_len(path) / chunksize)
-labels_dict = OrderedDict()
-# finish setup
+def evaluate(cls_name, cls, data, new_authors, kf):
+    for train_index, test_index in kf.split(data, new_authors):
+        X_train, X_test = data[train_index], data[test_index]
+        y_train, y_test = new_authors[train_index], new_authors[test_index]
+        cls.partial_fit(X_train, y_train, classes=ALL_CLASSES)
+        y_pred = cls.predict(X_test)
+        CLASSIFIERS_CONF_MATRIX[cls_name] += confusion_matrix(y_test, y_pred, list(LABELS_DICT.values()))
 
 
-file_iterator = get_chunk_iter(path, chunksize)
-# iterates every chunk of csv
-while True:
-    try:
-        rows = file_iterator.get_chunk()
-        authors, comments = get_authors_comments(rows)
-        labels, new_authors = adjust_labels(authors)
-        ngram_vectorizer = HashingVectorizer(analyzer=types_analyser[0], ngram_range=types_ngram[0])
+def classify_pos_tag(PATH, ngram, cv = 5):
+    file_iterator = get_chunk_iter(PATH, CHUNKSIZE)
+    chunk_num_iterations = np.ceil(get_file_len(PATH) / CHUNKSIZE)
+    ngram_vectorizer = HashingVectorizer(ngram_range = ngram, analyzer = 'word')
+    while True:
+        try:
+            rows = file_iterator.get_chunk()
+            authors, comments = get_authors_comments(rows)
+            new_authors = adjust_labels(authors)
+            comm_pos_tags = []
+            for comm in comments:
+                pos_tag_tmp = np.array(pos_tag(word_tokenize(comm)))[:, 1]
+                comm_pos_tags.append(' '.join(pos_tag_tmp))
+            for cls_name, cls in PARTIAL_FIT_CLASSIFIERS.items():
+                # pos_tag_comm = [pos_tag(word_tokenize(item)) for item in comments]
+                data = ngram_vectorizer.transform(comm_pos_tags)
+                kf = KFold(n_splits = cv, shuffle = True, random_state = 1)
+                evaluate(cls_name, cls, data, new_authors, kf)
+        except StopIteration:
+            print("Finish")
+            break
+        except Exception as exc:
+            print("Error")
+            print(exc)
+            raise
+        name = 'POS_TAG' + '_' + str(ngram) + '_with_normalization'
+        for cls_name, conf_matrix in CLASSIFIERS_CONF_MATRIX.items():
+            conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * cv))
+            plot_confusion_matrix(conf_matrix, list(LABELS_DICT.keys()),
+                              cls_name + name, True, cls_name)
 
-        for cls_name, cls in partial_fit_classifiers.items():
-            data = ngram_vectorizer.transform(comments)
-            kf = KFold(n_splits=kf_number, shuffle = True, random_state = 1)
-            for train_index, test_index in kf.split(data, new_authors):
-                X_train, X_test = data[train_index], data[test_index]
-                y_train, y_test = new_authors[train_index], new_authors[test_index]
-                cls.partial_fit(X_train, y_train, classes=all_classes)
-                y_pred = cls.predict(X_test)
-                classifiers_conf_matrix[cls_name] += confusion_matrix(y_test, y_pred)
-    except StopIteration:
-        print("Finish")
-        break
-    except Exception as exc:
-        print("Error")
-        print(exc)
-        raise        
 
-for cls_name, conf_matrix in classifiers_conf_matrix.items():
-    conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * kf_number))
-    plot_confusion_matrix(conf_matrix, list(labels.keys()),
-                          cls_name + ' with_normalization', True, cls_name)
+# main method that run every configuration setted to all classifiers defined
+def classify_and_plot(PATH, analyzer, ngram, cv = 5, pos = False):
+    file_iterator = get_chunk_iter(PATH, CHUNKSIZE)
+    chunk_num_iterations = np.ceil(get_file_len(PATH) / CHUNKSIZE)
+    ngram_vectorizer = HashingVectorizer(ngram_range = ngram, analyzer = analyzer)
+    # iterates every chunk of csv
+    while True:
+        try:
+            rows = file_iterator.get_chunk()
+            authors, comments = get_authors_comments(rows)
+            new_authors = adjust_labels(authors)
+            for cls_name, cls in PARTIAL_FIT_CLASSIFIERS.items():
+                comments_transform = comments
+                if pos:
+                    comments_transform = []
+                    for comm in comments:
+                        pos_tag_tmp = np.array(pos_tag(word_tokenize(comm)))[:, 1]
+                        comments_transform.append(' '.join(pos_tag_tmp))
+                data = ngram_vectorizer.transform(comments_transform)
+                kf = KFold(n_splits = cv, shuffle = True, random_state = 1)
+                evaluate(cls_name, cls, data, new_authors, kf)
+        except StopIteration:
+            print("Finish")
+            break
+        except Exception as exc:
+            print("Error")
+            print(exc)
+            raise
+    name = '_' + analyzer + '_' + str(ngram) + '_with_normalization'
+    for cls_name, conf_matrix in CLASSIFIERS_CONF_MATRIX.items():
+        conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * cv))
+        plot_confusion_matrix(conf_matrix, list(LABELS_DICT.keys()),
+                              cls_name + name, True, cls_name)
 
-# receives the path for .csv file
-def nltk_naive_bayes(path):
-    authors, comments = get_authors_comments(path)
+
+# receives the PATH for .csv file
+def nltk_naive_bayes(PATH):
+    authors, comments = get_authors_comments(PATH)
     features_sets = []
     for index in range(len(comments)):
         features = [' '.join(item) for item in nltk.bigrams(word_tokenize(comments[index]))]
@@ -194,33 +222,53 @@ def nltk_naive_bayes(path):
 #                           plot_name + 'with_normalization', True, title)
 
 
-# path = 'AA Dataset/2_authors_sub_1058648_comm.csv'
-# authors, comments = get_authors_comments(path)
-# gaussian_nb(authors, comments,
-#             'char_wb', (1, 1))
-# gaussian_nb(authors, comments,
-#             'char_wb', (2, 2))
+### Classifiers setup
 
-# gaussian_nb(authors, comments,
-#             'char', (1, 1))
-# gaussian_nb(authors, comments,
-#             'char', (2, 2))
+# list of classifiers it implements partial fit for online learning
+LABELS_DICT = OrderedDict()
+PATH = 'AA Dataset/2_authors_sub_1058648_comm.csv'
+adjust_authors_dict(PATH)
+AUTHORS_NUM = len(LABELS_DICT)
+PARTIAL_FIT_CLASSIFIERS = {
+    'SGD': SGDClassifier(),
+    'Perceptron': Perceptron(),
+    # 'NB Multinomial': MultinomialNB(alpha=0.01),
+    'Passive-Aggressive': PassiveAggressiveClassifier(),
+}
 
-# gaussian_nb(authors, comments,
-#             'word', (1, 1))
-# gaussian_nb(authors, comments,
-#             'word', (2, 2))
+CLASSIFIERS_CONF_MATRIX = {
+    'SGD': np.zeros((AUTHORS_NUM, AUTHORS_NUM)),
+    'Perceptron': np.zeros((AUTHORS_NUM, AUTHORS_NUM)),
+    # 'NB Multinomial': np.array(([0, 0], [0, 0])),
+    'Passive-Aggressive': np.zeros((AUTHORS_NUM, AUTHORS_NUM)),
+}
 
-# support_machines_vectors(authors, comments,
-#             'char_wb', (1, 1))
-# support_machines_vectors(authors, comments,
-#             'char_wb', (2, 2))
-# support_machines_vectors(authors, comments,
-#             'char', (1, 1))
-# support_machines_vectors(authors, comments,
-#             'char', (2, 2))
-# support_machines_vectors(authors, comments,
-#             'word', (1, 1))
-# support_machines_vectors(authors, comments,
-#             'word', (2, 2))
+KF_NUM = 5
 
+ALL_CLASSES = np.array(range(0, AUTHORS_NUM))
+CHUNKSIZE = 1000
+# finish setup
+
+# classify_and_plot(PATH, 'char', (1, 1), 5)
+# classify_and_plot(PATH, 'char', (2, 2), 5)
+# classify_and_plot(PATH, 'char', (3, 3), 5)
+# classify_and_plot(PATH, 'char', (4, 4), 5)
+# classify_and_plot(PATH, 'char', (5, 5), 5)
+
+
+# classify_and_plot(PATH, 'char_wb', (1, 1), 5)
+# classify_and_plot(PATH, 'char_wb', (2, 2), 5)
+# classify_and_plot(PATH, 'char_wb', (3, 3), 5)
+# classify_and_plot(PATH, 'char_wb', (4, 4), 5)
+# classify_and_plot(PATH, 'char_wb', (5, 5), 5)
+
+
+# classify_and_plot(PATH, 'word', (1, 1), 5)
+# classify_and_plot(PATH, 'word', (2, 2), 5)
+# classify_and_plot(PATH, 'word', (3, 3), 5)
+# classify_and_plot(PATH, 'word', (4, 4), 5)
+# classify_and_plot(PATH, 'word', (5, 5), 5)
+
+classify_pos_tag(PATH, (1, 1), 5)
+classify_pos_tag(PATH, (2, 2), 5)
+classify_pos_tag(PATH, (3, 3), 5)
