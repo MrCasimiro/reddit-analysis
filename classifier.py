@@ -1,11 +1,14 @@
 from __future__ import print_function
 
+import glob
 import nltk
 import numpy as np
 import pandas as pd
 import sklearn
 import itertools
 import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import precision_recall_fscore_support as score
 from nltk import word_tokenize, pos_tag
 from collections import OrderedDict
 from sklearn.model_selection import KFold
@@ -15,6 +18,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn import svm
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import cross_val_score
 from sklearn.linear_model import SGDClassifier
 from sklearn.linear_model import PassiveAggressiveClassifier
@@ -45,6 +49,24 @@ def get_authors_comments(model_table):
     return authors, comments
 
 
+def adjust_one_x_all(auth):
+    ONE_X_ALL_DICT = OrderedDict()
+    ONE_X_ALL_DICT['Others'] = 0
+    ONE_X_ALL_DICT[auth] = 1
+    return ONE_X_ALL_DICT
+
+
+def adjust_one_x_all_labels(author, authors):
+    new_authors = []
+    new_labels = []
+    for auth in authors:
+        if auth == author:
+            new_authors.append(1)
+        else:
+            new_authors.append(0)
+    return np.array(new_authors)
+
+
 # Maps Author to an integer starts with 0
 def adjust_authors_dict(PATH):
     for chunk in pd.read_csv(PATH, chunksize = 1000):
@@ -65,6 +87,66 @@ def adjust_labels(authors):
     return np.array(new_authors) 
 
 
+def return_classifiers():
+    PARTIAL_FIT_CLASSIFIERS = {
+        'SGD': SGDClassifier(),
+        'Perceptron': Perceptron(),
+        # 'NB Multinomial': MultinomialNB(alpha=0.01),
+        'Passive-Aggressive': PassiveAggressiveClassifier(),
+    }
+    return PARTIAL_FIT_CLASSIFIERS
+
+
+def return_conf_matrix(authors_num):
+    CLASSIFIERS_CONF_MATRIX = {
+        'SGD': np.zeros((authors_num, authors_num)),
+        'Perceptron': np.zeros((authors_num, authors_num)),
+        # 'NB Multinomial': np.array(([0, 0], [0, 0])),
+        'Passive-Aggressive': np.zeros((authors_num, authors_num)),
+    }
+    return  CLASSIFIERS_CONF_MATRIX
+
+
+def return_kf_hash():
+    return {
+        'kf-1': {
+            'test': list(),
+            'score': list()
+        },
+        'kf-2': {
+            'test': list(),
+            'score': list()
+        },
+        'kf-3': {
+            'test': list(),
+            'score': list()
+        },
+        'kf-4': {
+            'test': list(),
+            'score': list()
+        },
+        'kf-5': {
+            'test': list(),
+            'score': list()
+        }
+    }
+
+
+def return_roc_data():
+    ROC_VALUES = {
+        'SGD': {
+            'kf': return_kf_hash()
+        },
+        'Perceptron': {
+            'kf': return_kf_hash()
+        },
+        'Passive-Aggressive': {
+            'kf': return_kf_hash()
+        }
+    }
+    return ROC_VALUES
+
+
 # It plots the confusion matrix
 def plot_confusion_matrix(cm, classes, name, normalize=False, title='Confusion matrix'):
     cmap=plt.cm.Blues
@@ -73,12 +155,13 @@ def plot_confusion_matrix(cm, classes, name, normalize=False, title='Confusion m
         print("Normalized confusion matrix")
     else:
         print('Confusion matrix, without normalization')
-    print(cm)
+    # print(cm)
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.rcParams["figure.figsize"] = (18,18)
     plt.title(title)
     plt.colorbar()
     tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation=45)
+    plt.xticks(tick_marks, classes, rotation=60)
     plt.yticks(tick_marks, classes)
     fmt = '.2f' if normalize else 'd'
     thresh = cm.max() / 2.
@@ -93,19 +176,146 @@ def plot_confusion_matrix(cm, classes, name, normalize=False, title='Confusion m
     plt.close()
 
 
-def evaluate(cls_name, cls, data, new_authors, kf):
+def save_confusion_matrix(file_name, confusion_matrix, class_names):
+    confusion_matrix = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
+    df_cm = pd.DataFrame(
+        confusion_matrix, index=class_names, columns=class_names, 
+    )
+    df_cm.to_csv(file_name)
+
+
+def save_roc_data(file_name, cls_name, ROC_VALUES):
+    data = list()
+    for i in range(1,6):
+        data.append(ROC_VALUES[cls_name]['kf']['kf-'+str(i)]['test'])
+        data.append(ROC_VALUES[cls_name]['kf']['kf-'+str(i)]['score'])
+    df_cm = pd.DataFrame(
+       data 
+    )
+    df_cm.to_csv(file_name)
+
+
+def print_confusion_matrix(confusion_matrix, class_names, name, figsize = (16,14), fontsize=13):
+    """Prints a confusion matrix, as returned by sklearn.metrics.confusion_matrix, as a heatmap.
+    
+    Arguments
+    ---------
+    confusion_matrix: numpy.ndarray
+        The numpy.ndarray object returned from a call to sklearn.metrics.confusion_matrix. 
+        Similarly constructed ndarrays can also be used.
+    class_names: list
+        An ordered list of class names, in the order they index the given confusion matrix.
+    figsize: tuple
+        A 2-long tuple, the first value determining the horizontal size of the ouputted figure,
+        the second determining the vertical size. Defaults to (10,7).
+    fontsize: int
+        Font size for axes labels. Defaults to 14.
+        
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The resulting confusion matrix figure
+    """
+    confusion_matrix = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
+    df_cm = pd.DataFrame(
+        confusion_matrix, index=class_names, columns=class_names, 
+    )
+    fig = plt.figure(figsize=figsize)
+    try:
+        heatmap = sns.heatmap(df_cm, annot=True, fmt=".2f")
+    except ValueError:
+        raise ValueError("Confusion matrix values must be integers.")
+    heatmap.yaxis.set_ticklabels(heatmap.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=fontsize)
+    heatmap.xaxis.set_ticklabels(heatmap.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=fontsize)
+    plt.ylabel('True label',fontsize=fontsize)
+    plt.xlabel('Predicted label', fontsize=fontsize)
+    plt.savefig('' + name + '.png')
+    plt.close()
+
+
+def evaluate(CLASSIFIERS_CONF_MATRIX, cls_name, cls, data, new_authors, kf, ROC_VALUES):
+    i = 1
     for train_index, test_index in kf.split(data, new_authors):
         X_train, X_test = data[train_index], data[test_index]
         y_train, y_test = new_authors[train_index], new_authors[test_index]
         cls.partial_fit(X_train, y_train, classes=ALL_CLASSES)
         y_pred = cls.predict(X_test)
+        probas_ = cls.decision_function(X_test)
+        ROC_VALUES[cls_name]['kf']['kf-'+ str(i)]['test'].extend(y_test)
+        if(len(np.unique(new_authors)) == 2):
+            ROC_VALUES[cls_name]['kf']['kf-'+ str(i)]['score'].extend(probas_)
+        else:
+            ROC_VALUES[cls_name]['kf']['kf-'+ str(i)]['score'].extend(y_pred)
+        i += 1
         CLASSIFIERS_CONF_MATRIX[cls_name] += confusion_matrix(y_test, y_pred, list(LABELS_DICT.values()))
+
+
+def classify_one_x_all(PATH, ten_authors, analyzer, ngram, cv = 5, pos = False):
+    for author in ten_authors:
+        ONE_X_ALL_DICT = adjust_one_x_all(author)
+        file_iterator = get_chunk_iter(PATH, CHUNKSIZE)    
+        chunk_num_iterations = np.ceil(get_file_len(PATH) / CHUNKSIZE)
+        ngram_vectorizer = HashingVectorizer(ngram_range = ngram, analyzer = analyzer)
+        PARTIAL_FIT_CLASSIFIERS = return_classifiers()
+        CLASSIFIERS_CONF_MATRIX = return_conf_matrix(2)
+        ROC_VALUES = return_roc_data()
+        tmp = 0
+        vl_error = 0
+        while True:
+            try:
+                rows = file_iterator.get_chunk()
+                authors, comments = get_authors_comments(rows)
+                new_authors = adjust_one_x_all_labels(author, authors)
+                for cls_name, cls in PARTIAL_FIT_CLASSIFIERS.items():
+                    comments_transform = comments.values.astype('U')
+                    if pos:
+                        comments_transform = []
+                        for comm in comments:
+                            pos_tag_tmp = np.array(pos_tag(word_tokenize(comm)))[:, 1]
+                            comments_transform.append(' '.join(pos_tag_tmp))
+                    data = ngram_vectorizer.transform(comments_transform)
+                    kf = KFold(n_splits = cv, shuffle = True, random_state = 1)
+                    # print(new_authors)
+                    i = 1
+                    for train_index, test_index in kf.split(data, new_authors):
+                        X_train, X_test = data[train_index], data[test_index]
+                        y_train, y_test = new_authors[train_index], new_authors[test_index]
+                        cls.partial_fit(X_train, y_train, classes=np.array(range(0, 2)))
+                        y_pred = cls.predict(X_test)
+                        probas_ = cls.decision_function(X_test)
+                        ROC_VALUES[cls_name]['kf']['kf-'+ str(i)]['test'].extend(y_test)
+                        ROC_VALUES[cls_name]['kf']['kf-'+ str(i)]['score'].extend(probas_)
+                        i += 1
+                        CLASSIFIERS_CONF_MATRIX[cls_name] += confusion_matrix(y_test, y_pred, list(ONE_X_ALL_DICT.values()))
+            except ValueError:
+                print('ValueError')
+                vl_error += 1000
+                next
+            except StopIteration:
+                print("Finish")
+                break
+            except Exception as exc:
+                print("Error")
+                print(exc)
+                raise
+        print('errro    ' + str(vl_error))
+        print(tmp)
+        for cls_name, conf_matrix in CLASSIFIERS_CONF_MATRIX.items():
+            name = 'X_ALL_' + cls_name + '_' + analyzer + '_' + str(ngram)
+            conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * cv))
+            # print_confusion_matrix(conf_matrix, list(ONE_X_ALL_DICT.keys()),
+            #      author + '_' + name)
+            save_confusion_matrix(author + '_' + name + '.csv', conf_matrix, list(ONE_X_ALL_DICT.keys()))
+            save_roc_data('ROC_' + author + '_' + name + '.csv', cls_name, ROC_VALUES)
 
 
 def classify_pos_tag(PATH, ngram, cv = 5):
     file_iterator = get_chunk_iter(PATH, CHUNKSIZE)
     chunk_num_iterations = np.ceil(get_file_len(PATH) / CHUNKSIZE)
     ngram_vectorizer = HashingVectorizer(ngram_range = ngram, analyzer = 'word')
+    PARTIAL_FIT_CLASSIFIERS = return_classifiers()
+    CLASSIFIERS_CONF_MATRIX = return_conf_matrix(AUTHORS_NUM)
+    ROC_VALUES = return_roc_data()
     while True:
         try:
             rows = file_iterator.get_chunk()
@@ -119,7 +329,7 @@ def classify_pos_tag(PATH, ngram, cv = 5):
                 # pos_tag_comm = [pos_tag(word_tokenize(item)) for item in comments]
                 data = ngram_vectorizer.transform(comm_pos_tags)
                 kf = KFold(n_splits = cv, shuffle = True, random_state = 1)
-                evaluate(cls_name, cls, data, new_authors, kf)
+                evaluate(CLASSIFIERS_CONF_MATRIX, cls_name, cls, data, new_authors, kf, ROC_VALUES)
         except StopIteration:
             print("Finish")
             break
@@ -128,10 +338,12 @@ def classify_pos_tag(PATH, ngram, cv = 5):
             print(exc)
             raise
         name = 'POS_TAG' + '_' + str(ngram) + '_with_normalization'
-        for cls_name, conf_matrix in CLASSIFIERS_CONF_MATRIX.items():
-            conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * cv))
-            plot_confusion_matrix(conf_matrix, list(LABELS_DICT.keys()),
-                              cls_name + name, True, cls_name)
+    for cls_name, conf_matrix in CLASSIFIERS_CONF_MATRIX.items():
+        conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * cv))
+        # print_confusion_matrix(conf_matrix, list(LABELS_DICT.keys()),
+        #      cls_name + name)
+        # save_confusion_matrix(cls_name + '_' + name + '.csv', conf_matrix, list(LABELS_DICT.keys()))
+        save_roc_data('ROC_' + cls_name + '_' + name + '.csv', cls_name, ROC_VALUES)
 
 
 # main method that run every configuration setted to all classifiers defined
@@ -139,6 +351,9 @@ def classify_and_plot(PATH, analyzer, ngram, cv = 5, pos = False):
     file_iterator = get_chunk_iter(PATH, CHUNKSIZE)
     chunk_num_iterations = np.ceil(get_file_len(PATH) / CHUNKSIZE)
     ngram_vectorizer = HashingVectorizer(ngram_range = ngram, analyzer = analyzer)
+    PARTIAL_FIT_CLASSIFIERS = return_classifiers()
+    CLASSIFIERS_CONF_MATRIX = return_conf_matrix(AUTHORS_NUM)
+    ROC_VALUES = return_roc_data()
     # iterates every chunk of csv
     while True:
         try:
@@ -154,7 +369,7 @@ def classify_and_plot(PATH, analyzer, ngram, cv = 5, pos = False):
                         comments_transform.append(' '.join(pos_tag_tmp))
                 data = ngram_vectorizer.transform(comments_transform)
                 kf = KFold(n_splits = cv, shuffle = True, random_state = 1)
-                evaluate(cls_name, cls, data, new_authors, kf)
+                evaluate(CLASSIFIERS_CONF_MATRIX, cls_name, cls, data, new_authors, kf, ROC_VALUES)
         except StopIteration:
             print("Finish")
             break
@@ -165,95 +380,61 @@ def classify_and_plot(PATH, analyzer, ngram, cv = 5, pos = False):
     name = '_' + analyzer + '_' + str(ngram) + '_with_normalization'
     for cls_name, conf_matrix in CLASSIFIERS_CONF_MATRIX.items():
         conf_matrix = np.divide(conf_matrix, (chunk_num_iterations * cv))
-        plot_confusion_matrix(conf_matrix, list(LABELS_DICT.keys()),
-                              cls_name + name, True, cls_name)
-
-
-# receives the PATH for .csv file
-def nltk_naive_bayes(PATH):
-    authors, comments = get_authors_comments(PATH)
-    features_sets = []
-    for index in range(len(comments)):
-        features = [' '.join(item) for item in nltk.bigrams(word_tokenize(comments[index]))]
-        feat_dict = { i : True for i in features }
-        features_sets.append((feat_dict, authors[index]))
-    random.shuffle(features_sets)
-    train_set = features_sets[len(features_sets)-1:]
-    test_set = features_sets[:len(features_sets)]
-    classifier = nltk.NaiveBayesClassifier.train(train_set)
-    print(nltk.classify.accuracy(classifier, test_set))
-
-
-
-
-# classifies based on Gaussian Naive Bayes in sklearn
-# 
-# analyser could be 'char_wb' for characters in word boundaries
-# or it could be 'char' for words in text
-# 
-# ngram_range is tuple of what number of n is used, e.g, (2,2), (3,3) and so on
-# def gaussian_nb(authors, comments, set_analyzer, ngram_range):
-#     labels, new_authors = adjust_labels(authors)
-#     ngram_vectorizer = CountVectorizer(analyzer=set_analyzer, ngram_range=ngram_range)
-#     counts = ngram_vectorizer.fit_transform(comments)
-#     data = counts.toarray()
-#     gnb = GaussianNB()
-#     y_pred = cross_val_predict(gnb, data, new_authors, cv = 5)
-#     title = 'Confusion Matrix - ' + 'Gaussian Naive Bayes'
-#     plot_name = 'Gaussian_NB_' + set_analyzer + '_' + str(ngram_range) + '_'
-#     plot_confusion_matrix(confusion_matrix(new_authors, y_pred), list(labels.keys()),
-#                           plot_name + 'without_normalization', False, title)
-#     plot_confusion_matrix(confusion_matrix(new_authors, y_pred), list(labels.keys()),
-#                           plot_name + 'with_normalization', True, title)
-
-
-# def support_machines_vectors(authors, comments, set_analyzer, ngram_range):
-#     labels, new_authors = adjust_labels(authors)
-#     ngram_vectorizer = CountVectorizer(analyzer=set_analyzer, ngram_range=ngram_range)
-#     counts = ngram_vectorizer.fit_transform(comments)
-#     data = counts.toarray()
-#     clf = svm.SVC()
-#     y_pred = cross_val_predict(clf, data, new_authors, cv = 5)
-#     title = 'Confusion Matrix - ' + 'Support Machine Vector'
-#     plot_name = 'SVM_' + set_analyzer + '_' + str(ngram_range) + '_'
-#     plot_confusion_matrix(confusion_matrix(new_authors, y_pred), list(labels.keys()),
-#                           plot_name + 'without_normalization', False, title)
-#     plot_confusion_matrix(confusion_matrix(new_authors, y_pred), list(labels.keys()),
-#                           plot_name + 'with_normalization', True, title)
+        # print_confusion_matrix(conf_matrix, list(LABELS_DICT.keys()),
+        #      cls_name + name)
+        # save_confusion_matrix(cls_name + '_' + name + '.csv', conf_matrix, list(LABELS_DICT.keys()))
+        save_roc_data('ROC_' + cls_name + '_' + name + '.csv', cls_name, ROC_VALUES)
 
 
 ### Classifiers setup
 
 # list of classifiers it implements partial fit for online learning
 LABELS_DICT = OrderedDict()
-PATH = 'AA Dataset/2_authors_sub_1058648_comm.csv'
+PATH = 'AA Dataset/10_authors_sub_1058648_comm.csv'
 adjust_authors_dict(PATH)
-AUTHORS_NUM = len(LABELS_DICT)
-PARTIAL_FIT_CLASSIFIERS = {
-    'SGD': SGDClassifier(),
-    'Perceptron': Perceptron(),
-    # 'NB Multinomial': MultinomialNB(alpha=0.01),
-    'Passive-Aggressive': PassiveAggressiveClassifier(),
-}
 
-CLASSIFIERS_CONF_MATRIX = {
-    'SGD': np.zeros((AUTHORS_NUM, AUTHORS_NUM)),
-    'Perceptron': np.zeros((AUTHORS_NUM, AUTHORS_NUM)),
-    # 'NB Multinomial': np.array(([0, 0], [0, 0])),
-    'Passive-Aggressive': np.zeros((AUTHORS_NUM, AUTHORS_NUM)),
-}
+# adjust_all_10_authors()
+AUTHORS_NUM = len(LABELS_DICT)
+
+PATH_SUB = 'AA Dataset/authors_sub_1058648.csv'
+PATH_ALL = 'AA Dataset/all_authors_sub_1058648_comm.csv'
+
+ten_authors = pd.read_csv(PATH_SUB, sep=',', nrows=10)['Author'] 
 
 KF_NUM = 5
 
 ALL_CLASSES = np.array(range(0, AUTHORS_NUM))
-CHUNKSIZE = 1000
+CHUNKSIZE = 10000
 # finish setup
+
+
+
+# classify_one_x_all(PATH_ALL, ten_authors, 'char', (1, 1), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char', (2, 2), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char', (3, 3), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char', (4, 4), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char', (5, 5), 5)
+
+
+classify_one_x_all(PATH_ALL, ten_authors, 'char_wb', (1, 1), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char_wb', (2, 2), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char_wb', (3, 3), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char_wb', (4, 4), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'char_wb', (5, 5), 5)
+
+classify_one_x_all(PATH_ALL, ten_authors, 'word', (1, 1), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'word', (2, 2), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'word', (3, 3), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'word', (4, 4), 5)
+classify_one_x_all(PATH_ALL, ten_authors, 'word', (5, 5), 5)
+
 
 # classify_and_plot(PATH, 'char', (1, 1), 5)
 # classify_and_plot(PATH, 'char', (2, 2), 5)
 # classify_and_plot(PATH, 'char', (3, 3), 5)
 # classify_and_plot(PATH, 'char', (4, 4), 5)
 # classify_and_plot(PATH, 'char', (5, 5), 5)
+# classify_and_plot(PATH, 'char', (1, 5), 5)
 
 
 # classify_and_plot(PATH, 'char_wb', (1, 1), 5)
@@ -261,6 +442,7 @@ CHUNKSIZE = 1000
 # classify_and_plot(PATH, 'char_wb', (3, 3), 5)
 # classify_and_plot(PATH, 'char_wb', (4, 4), 5)
 # classify_and_plot(PATH, 'char_wb', (5, 5), 5)
+# classify_and_plot(PATH, 'char_wb', (1, 5), 5)
 
 
 # classify_and_plot(PATH, 'word', (1, 1), 5)
@@ -268,7 +450,12 @@ CHUNKSIZE = 1000
 # classify_and_plot(PATH, 'word', (3, 3), 5)
 # classify_and_plot(PATH, 'word', (4, 4), 5)
 # classify_and_plot(PATH, 'word', (5, 5), 5)
+# classify_and_plot(PATH, 'word', (1, 5), 5)
 
-classify_pos_tag(PATH, (1, 1), 5)
-classify_pos_tag(PATH, (2, 2), 5)
-classify_pos_tag(PATH, (3, 3), 5)
+
+# classify_pos_tag(PATH, (1, 1), 5)
+# classify_pos_tag(PATH, (2, 2), 5)
+# classify_pos_tag(PATH, (3, 3), 5)
+# classify_pos_tag(PATH, (4, 4), 5)
+# classify_pos_tag(PATH, (5, 5), 5)
+# classify_pos_tag(PATH, (1, 5), 5)
